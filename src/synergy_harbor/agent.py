@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import tempfile
 import time
@@ -22,6 +23,8 @@ from synergy_harbor.installer import (
     parse_platform_probe,
 )
 from synergy_harbor.parser import UsageSummary, parse_synergy_jsonl
+
+_ENVIRONMENT_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
 class Synergy(BaseInstalledAgent):
@@ -46,6 +49,8 @@ class Synergy(BaseInstalledAgent):
         prompt_template_path: Path | str | None = None,
         version: str | None = None,
         extra_env: dict[str, str] | None = None,
+        variant: str | None = None,
+        model_options: dict[str, Any] | None = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -53,14 +58,23 @@ class Synergy(BaseInstalledAgent):
             raise ValueError(
                 f"This adapter pins Synergy {SYNERGY_VERSION}; unsupported version: {version}"
             )
+        run_env = dict(extra_env or {})
+        for key, value in run_env.items():
+            if not isinstance(key, str) or _ENVIRONMENT_NAME.fullmatch(key) is None:
+                raise ValueError(f"Invalid environment variable name: {key!r}")
+            if not isinstance(value, str):
+                raise ValueError(f"Invalid environment variable value for {key!r}")
         super().__init__(
             logs_dir,
             prompt_template_path,
             SYNERGY_VERSION,
-            extra_env,
+            None,
             *args,
             **kwargs,
         )
+        self._run_env = run_env
+        self.variant = variant
+        self.model_options = model_options
         self._output = ""
         self._duration_seconds: float | None = None
 
@@ -71,7 +85,12 @@ class Synergy(BaseInstalledAgent):
 
     @override
     def get_version_command(self) -> str | None:
-        return f"{shlex.quote(SYNERGY_BINARY)} --version"
+        binary = shlex.quote(SYNERGY_BINARY)
+        return (
+            'synergy_home=$(mktemp -d "${TMPDIR:-/tmp}/synergy-version-XXXXXX") && '
+            "trap 'rm -rf \"$synergy_home\"' EXIT && "
+            f'HOME="$synergy_home" SYNERGY_HOME="$synergy_home" {binary} --version'
+        )
 
     @override
     async def install(self, environment: BaseEnvironment) -> None:
@@ -117,52 +136,93 @@ class Synergy(BaseInstalledAgent):
 
         run_id = self._run_id()
         runtime_home, instruction_path, config_path = self._runtime_paths(run_id)
+        model_config_path = config_path.parent / "90-model-options.jsonc"
+        provider_env_path = runtime_home / ".provider-env.sh"
         log_path = PurePosixPath("/logs/agent/synergy.jsonl")
         started_at = time.monotonic()
+        should_apply_context = False
+        self._output = ""
 
         with tempfile.TemporaryDirectory(prefix="synergy-harbor-") as temporary_directory:
             temporary_root = Path(temporary_directory)
             host_instruction = temporary_root / "instruction.txt"
             host_config = temporary_root / "80-permissions.jsonc"
+            host_model_config = temporary_root / "90-model-options.jsonc"
+            host_provider_env = temporary_root / ".provider-env.sh"
             host_instruction.write_text(instruction, encoding="utf-8")
             host_config.write_text(
                 json.dumps({"controlProfile": "full_access"}, separators=(",", ":")) + "\n",
                 encoding="utf-8",
             )
+            if self._run_env:
+                host_provider_env.write_text(
+                    "".join(
+                        f"export {key}={shlex.quote(value)}\n"
+                        for key, value in self._run_env.items()
+                    ),
+                    encoding="utf-8",
+                )
+                host_provider_env.chmod(0o600)
+            if self.model_options is not None:
+                provider_id, model_id = self.model_name.split("/", maxsplit=1)
+                host_model_config.write_text(
+                    json.dumps(
+                        {
+                            "provider": {
+                                provider_id: {"models": {model_id: {"options": self.model_options}}}
+                            }
+                        },
+                        separators=(",", ":"),
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
 
-            await self.exec_as_root(
-                environment,
-                command=(
-                    f"rm -rf {shlex.quote(str(runtime_home))} "
-                    f"{shlex.quote(str(instruction_path))} && "
-                    f"mkdir -p {shlex.quote(str(config_path.parent))}"
-                ),
-            )
-            await environment.upload_file(host_config, str(config_path))
-            await environment.upload_file(host_instruction, str(instruction_path))
-            await self.exec_as_root(
-                environment,
-                command=self._chown_command(environment, runtime_home, instruction_path),
-            )
-
-            model = shlex.quote(self.model_name)
-            command = (
-                f"{shlex.quote(SYNERGY_BINARY)} send "
-                f"--format json --agent synergy --model {model} "
-                f"< {shlex.quote(str(instruction_path))} "
-                f"2>&1 | stdbuf -oL tee {shlex.quote(str(log_path))}"
-            )
             try:
+                await self.exec_as_root(
+                    environment,
+                    command=(
+                        f"rm -rf {shlex.quote(str(runtime_home))} "
+                        f"{shlex.quote(str(instruction_path))} && "
+                        f"mkdir -p {shlex.quote(str(config_path.parent))}"
+                    ),
+                )
+                await environment.upload_file(host_config, str(config_path))
+                await environment.upload_file(host_instruction, str(instruction_path))
+                if self._run_env:
+                    await environment.upload_file(host_provider_env, str(provider_env_path))
+                if self.model_options is not None:
+                    await environment.upload_file(host_model_config, str(model_config_path))
+                await self.exec_as_root(
+                    environment,
+                    command=self._chown_command(environment, runtime_home, instruction_path),
+                )
+
+                model = shlex.quote(self.model_name)
+                variant_flag = (
+                    f" --variant {shlex.quote(self.variant)}" if self.variant is not None else ""
+                )
+                env_prefix = f". {shlex.quote(str(provider_env_path))} && " if self._run_env else ""
+                command = (
+                    f"{env_prefix}{shlex.quote(SYNERGY_BINARY)} send "
+                    f"--format json --agent synergy --model {model}{variant_flag} "
+                    f"< {shlex.quote(str(instruction_path))} "
+                    f"2>&1 | stdbuf -oL tee {shlex.quote(str(log_path))}"
+                )
+                should_apply_context = True
                 result = await self.exec_as_agent(
                     environment,
                     command=command,
-                    env={"SYNERGY_HOME": str(runtime_home)},
+                    env={"HOME": str(runtime_home), "SYNERGY_HOME": str(runtime_home)},
                 )
                 self._output = result.stdout or ""
             finally:
                 self._duration_seconds = time.monotonic() - started_at
-                self._apply_context(context)
-                await self._cleanup(environment, runtime_home, instruction_path)
+                try:
+                    if should_apply_context:
+                        self._apply_context(context)
+                finally:
+                    await self._cleanup(environment, runtime_home, instruction_path)
 
     @override
     def _classify_exec_error(self, command: str, result: Any):

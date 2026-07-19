@@ -111,12 +111,13 @@ def build_install_command(asset: ReleaseAsset) -> str:
     binary = shlex.quote(SYNERGY_BINARY)
     return f"""set -euo pipefail
 tmpdir=$(mktemp -d)
-trap 'rm -rf "$tmpdir"' EXIT
+synergy_home=$(mktemp -d /installed-agent/synergy-install-XXXXXX)
+trap 'rm -rf "$tmpdir" "$synergy_home"' EXIT
 curl -fsSL {url} -o "$tmpdir/synergy.tar.gz"
 printf '%s  %s\\n' {digest} "$tmpdir/synergy.tar.gz" | sha256sum -c -
 rm -rf {install_root}
 mkdir -p {install_root}
 tar -xzf "$tmpdir/synergy.tar.gz" -C {install_root}
 chmod -R a+rX {install_root}
-{binary} --version
+HOME="$synergy_home" SYNERGY_HOME="$synergy_home" {binary} --version
 """

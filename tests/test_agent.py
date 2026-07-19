@@ -54,7 +54,12 @@ class FakeEnvironment:
 
 @pytest.fixture
 def agent(tmp_path: Path) -> Synergy:
-    instance = Synergy(logs_dir=tmp_path, model_name="anthropic/claude-sonnet-4-5")
+    instance = Synergy(
+        logs_dir=tmp_path,
+        model_name="anthropic/claude-sonnet-4-5",
+        variant="minimal",
+        model_options={"thinking": {"type": "disabled"}},
+    )
     instance.context_id = UUID("12345678-1234-5678-1234-567812345678")
     return instance
 
@@ -63,11 +68,25 @@ def test_identity_and_version(agent: Synergy) -> None:
     assert agent.name() == "synergy"
     assert agent.version() == SYNERGY_VERSION
     assert agent.import_path() == "synergy_harbor.agent:Synergy"
+    version_command = agent.get_version_command()
+    assert version_command is not None
+    assert 'mktemp -d "${TMPDIR:-/tmp}/synergy-version-XXXXXX"' in version_command
+    assert 'HOME="$synergy_home" SYNERGY_HOME="$synergy_home"' in version_command
+    assert "trap 'rm -rf \"$synergy_home\"' EXIT" in version_command
 
 
 def test_rejects_unpinned_version(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="pins Synergy"):
         Synergy(logs_dir=tmp_path, version="latest")
+
+
+def test_rejects_invalid_agent_environment_name(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="environment variable"):
+        Synergy(
+            logs_dir=tmp_path,
+            model_name="deepseek/deepseek-v4-flash",
+            extra_env={"INVALID-NAME": "value"},
+        )
 
 
 @pytest.mark.asyncio
@@ -99,23 +118,59 @@ async def test_run_uploads_instruction_without_shell_interpolation(agent: Synerg
     assert len(send_commands) == 1
     send = send_commands[0]
     assert instruction not in send["command"]
+    assert "--variant minimal" in send["command"]
     assert (
         "< /installed-agent/synergy-instruction-12345678123456781234567812345678.txt"
         in send["command"]
     )
-    assert send["env"] == {
-        "SYNERGY_HOME": "/installed-agent/synergy-home-12345678123456781234567812345678"
-    }
+    expected_home = "/installed-agent/synergy-home-12345678123456781234567812345678"
+    assert send["env"] == {"HOME": expected_home, "SYNERGY_HOME": expected_home}
+    assert expected_home != "/root"
+    assert expected_home != "/home/agent"
 
     uploaded_by_name = {name: (target, content) for name, target, content in environment.uploads}
     assert uploaded_by_name["instruction.txt"][1] == instruction
     assert '"controlProfile":"full_access"' in uploaded_by_name["80-permissions.jsonc"][1]
+    assert '"anthropic"' in uploaded_by_name["90-model-options.jsonc"][1]
+    assert '"claude-sonnet-4-5"' in uploaded_by_name["90-model-options.jsonc"][1]
+    assert '"thinking":{"type":"disabled"}' in uploaded_by_name["90-model-options.jsonc"][1]
     assert context.n_input_tokens == 10
     assert context.n_output_tokens == 5
     assert context.n_cache_tokens == 2
     assert context.cost_usd == 0.1
     assert context.metadata is not None
     assert context.metadata["synergy"]["session_id"] == "ses_test"
+
+
+@pytest.mark.asyncio
+async def test_run_uploads_agent_environment_without_exec_env(tmp_path: Path) -> None:
+    secret = "sentinel-provider-secret"
+    instance = Synergy(
+        logs_dir=tmp_path,
+        model_name="deepseek/deepseek-v4-flash",
+        extra_env={"DEEPSEEK_API_KEY": secret},
+    )
+    instance.context_id = UUID("12345678-1234-5678-1234-567812345678")
+    environment = FakeEnvironment()
+
+    await instance.run(
+        "complete the task",
+        cast(BaseEnvironment, environment),
+        AgentContext(),
+    )
+
+    assert instance.extra_env == {}
+    uploaded_by_name = {name: (target, content) for name, target, content in environment.uploads}
+    env_target, env_content = uploaded_by_name[".provider-env.sh"]
+    assert env_target.endswith("/synergy-home-12345678123456781234567812345678/.provider-env.sh")
+    assert f"export DEEPSEEK_API_KEY={secret}" in env_content
+
+    serialized_commands = "\n".join(item["command"] for item in environment.commands)
+    serialized_exec_env = "\n".join(
+        value for item in environment.commands for value in (item["env"] or {}).values()
+    )
+    assert secret not in serialized_commands
+    assert secret not in serialized_exec_env
 
 
 def test_classifies_provider_authentication_failure(agent: Synergy) -> None:
@@ -168,3 +223,28 @@ async def test_cleanup_runs_after_agent_failure(agent: Synergy) -> None:
     assert cleanup_commands
     assert context.metadata is not None
     assert context.metadata["synergy"]["error_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_cleanup_runs_after_setup_failure(agent: Synergy) -> None:
+    class FailingUploadEnvironment(FakeEnvironment):
+        async def upload_file(self, source_path: Path | str, target_path: str) -> None:
+            await super().upload_file(source_path, target_path)
+            if target_path.endswith("90-model-options.jsonc"):
+                raise OSError("injected upload failure")
+
+    environment = FailingUploadEnvironment()
+
+    with pytest.raises(OSError, match="injected upload failure"):
+        await agent.run(
+            "fail during setup",
+            cast(BaseEnvironment, environment),
+            AgentContext(),
+        )
+
+    cleanup_commands = [
+        item
+        for item in environment.commands
+        if item["command"].startswith("rm -rf /installed-agent/synergy-home")
+    ]
+    assert cleanup_commands

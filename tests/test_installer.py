@@ -55,3 +55,6 @@ def test_install_command_verifies_archive_before_extraction() -> None:
     assert asset.sha256 in command
     assert asset.url in command
     assert SYNERGY_BINARY in command
+    assert "mktemp -d /installed-agent/synergy-install-XXXXXX" in command
+    assert 'HOME="$synergy_home" SYNERGY_HOME="$synergy_home"' in command
+    assert 'trap \'rm -rf "$tmpdir" "$synergy_home"\' EXIT' in command
