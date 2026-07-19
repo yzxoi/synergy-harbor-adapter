@@ -1,0 +1,20 @@
+job_name: synergy-terminal-bench-2-1-smoke
+n_concurrent_trials: 1
+n_attempts: 1
+quiet: false
+
+environment:
+  type: docker
+
+agents:
+  - import_path: synergy_harbor.agent:Synergy
+    model_name: anthropic/claude-sonnet-4-5
+    extra_allowed_hosts:
+      - api.anthropic.com
+    env:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+
+datasets:
+  - name: terminal-bench/terminal-bench-2-1
+    ref: sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a
+    n_tasks: 1

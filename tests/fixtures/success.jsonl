@@ -1,0 +1,5 @@
+{"type":"step_start","timestamp":1,"sessionID":"ses_test","part":{"id":"start-1","type":"step-start"}}
+{"type":"tool_use","timestamp":2,"sessionID":"ses_test","part":{"id":"tool-1","type":"tool","tool":"bash","state":{"status":"completed","input":{"command":"pwd"},"output":"/root","title":"pwd","metadata":{},"time":{"start":1,"end":2}}}}
+{"type":"step_finish","timestamp":3,"sessionID":"ses_test","part":{"id":"finish-1","type":"step-finish","reason":"tool-calls","cost":0.12,"tokens":{"input":100,"output":20,"reasoning":5,"cache":{"read":10,"write":2}}}}
+{"type":"text","timestamp":4,"sessionID":"ses_test","part":{"id":"text-1","type":"text","text":"done","time":{"start":3,"end":4}}}
+{"type":"step_finish","timestamp":5,"sessionID":"ses_test","part":{"id":"finish-2","type":"step-finish","reason":"stop","cost":0.08,"tokens":{"input":50,"output":10,"reasoning":0,"cache":{"read":5,"write":0}}}}
