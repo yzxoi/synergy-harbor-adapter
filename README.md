@@ -205,11 +205,13 @@ agents:
         thinking:
           type: disabled
       variant: high
+      workflow: lightloop
 ```
 
 - `model_options` are written to the selected provider/model inside the isolated trial's `synergy.d` config.
 - `variant` is passed to `synergy send --variant`.
-- The two mechanisms are independent. Do not add a variant unless the selected model exposes that variant.
+- `workflow: lightloop` runs the instruction as a Light Loop workflow task (`synergy send --workflow lightloop`); omit it for a plain single-shot session. The pinned Synergy release does not expose the option yet, so lightloop requires the `SynergyDev` adapter with a source build; the release adapter rejects the mode at construction.
+- The three mechanisms are independent. Do not add a variant unless the selected model exposes that variant.
 
 See [Running and debugging](docs/running.md) for the complete configuration reference, direct CLI usage, output locations, troubleshooting, and Apple Silicon notes.
 

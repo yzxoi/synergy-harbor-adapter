@@ -51,12 +51,23 @@ class Synergy(BaseInstalledAgent):
         extra_env: dict[str, str] | None = None,
         variant: str | None = None,
         model_options: dict[str, Any] | None = None,
+        workflow: str | None = None,
+        allow_lightloop: bool = False,
         *args: Any,
         **kwargs: Any,
     ) -> None:
         if version is not None and version != SYNERGY_VERSION:
             raise ValueError(
                 f"This adapter pins Synergy {SYNERGY_VERSION}; unsupported version: {version}"
+            )
+        if workflow not in (None, "lightloop"):
+            raise ValueError(
+                f"Unsupported workflow mode: {workflow!r}; expected None or 'lightloop'"
+            )
+        if workflow == "lightloop" and not allow_lightloop:
+            raise ValueError(
+                "The pinned Synergy release does not expose --workflow lightloop; "
+                "use the SynergyDev adapter with a source build that includes the CLI option"
             )
         run_env = dict(extra_env or {})
         for key, value in run_env.items():
@@ -75,6 +86,7 @@ class Synergy(BaseInstalledAgent):
         self._run_env = run_env
         self.variant = variant
         self.model_options = model_options
+        self.workflow = workflow
         self._output = ""
         self._duration_seconds: float | None = None
 
@@ -202,10 +214,11 @@ class Synergy(BaseInstalledAgent):
                 variant_flag = (
                     f" --variant {shlex.quote(self.variant)}" if self.variant is not None else ""
                 )
+                workflow_flag = " --workflow lightloop" if self.workflow == "lightloop" else ""
                 env_prefix = f". {shlex.quote(str(provider_env_path))} && " if self._run_env else ""
                 command = (
                     f"{env_prefix}{shlex.quote(SYNERGY_BINARY)} send "
-                    f"--format json --agent synergy --model {model}{variant_flag} "
+                    f"--format json --agent synergy --model {model}{variant_flag}{workflow_flag} "
                     f"< {shlex.quote(str(instruction_path))} "
                     f"2>&1 | stdbuf -oL tee {shlex.quote(str(log_path))}"
                 )
@@ -269,6 +282,7 @@ class Synergy(BaseInstalledAgent):
         metadata = dict(context.metadata or {})
         metadata["synergy"] = {
             "version": SYNERGY_VERSION,
+            "workflow": self.workflow,
             "session_id": summary.session_id,
             "step_count": summary.step_count,
             "event_count": summary.event_count,

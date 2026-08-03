@@ -248,3 +248,56 @@ async def test_cleanup_runs_after_setup_failure(agent: Synergy) -> None:
         if item["command"].startswith("rm -rf /installed-agent/synergy-home")
     ]
     assert cleanup_commands
+
+
+def test_rejects_unsupported_workflow_mode(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="Unsupported workflow mode"):
+        Synergy(logs_dir=tmp_path, model_name="anthropic/claude-sonnet-4-5", workflow="lattice")
+
+
+def test_release_adapter_rejects_lightloop_without_dev_build(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="--workflow lightloop"):
+        Synergy(logs_dir=tmp_path, model_name="anthropic/claude-sonnet-4-5", workflow="lightloop")
+
+
+@pytest.mark.asyncio
+async def test_run_lightloop_passes_workflow_flag(agent: Synergy) -> None:
+    output = (
+        '{"type":"step_finish","sessionID":"ses_loop","part":{"id":"finish",'
+        '"type":"step-finish","reason":"stop","cost":0.2,"tokens":{"input":20,'
+        '"output":8,"reasoning":2,"cache":{"read":4,"write":0}}}}\n'
+        '{"type":"lightloop_finish","sessionID":"ses_loop","status":"completed",'
+        '"elapsedMs":1234,"timedOut":false}\n'
+    )
+    environment = FakeEnvironment(run_output=output)
+    context = AgentContext()
+    instance = Synergy(
+        logs_dir=agent.logs_dir,
+        model_name="anthropic/claude-sonnet-4-5",
+        workflow="lightloop",
+        allow_lightloop=True,
+    )
+    instance.context_id = UUID("12345678-1234-5678-1234-567812345678")
+
+    await instance.run("finish the loop task", cast(BaseEnvironment, environment), context)
+
+    send_commands = [item for item in environment.commands if " send " in item["command"]]
+    assert len(send_commands) == 1
+    assert "--workflow lightloop" in send_commands[0]["command"]
+    assert context.metadata is not None
+    assert context.metadata["synergy"]["workflow"] == "lightloop"
+    assert context.metadata["synergy"]["session_id"] == "ses_loop"
+
+
+@pytest.mark.asyncio
+async def test_run_default_mode_omits_workflow_flag(agent: Synergy) -> None:
+    environment = FakeEnvironment(run_output="")
+    context = AgentContext()
+
+    await agent.run("plain task", cast(BaseEnvironment, environment), context)
+
+    send_commands = [item for item in environment.commands if " send " in item["command"]]
+    assert len(send_commands) == 1
+    assert "--workflow" not in send_commands[0]["command"]
+    assert context.metadata is not None
+    assert context.metadata["synergy"]["workflow"] is None

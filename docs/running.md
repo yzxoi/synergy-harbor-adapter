@@ -400,6 +400,33 @@ The adapter writes an isolated config fragment equivalent to:
 
 The provider and model keys are derived from `model_name`. No provider-specific behavior is hard-coded into the adapter.
 
+### `workflow`
+
+Optional Synergy workflow mode:
+
+```yaml
+kwargs:
+  workflow: lightloop
+```
+
+`lightloop` runs the benchmark instruction as a Light Loop workflow task. The
+adapter passes `--workflow lightloop` to `synergy send`, which enables the
+session workflow before the first prompt and keeps `send` attached until the
+workflow reaches a terminal state (approval clears the workflow; rejection
+iterates within the same attempt).
+
+The pinned Synergy release (2.4.3) does not expose `--workflow lightloop`, so
+the release adapter rejects this mode at construction. Use the `SynergyDev`
+adapter (`synergy_dev_harbor.py`) with a source build that includes the CLI
+option: build with `bun run --cwd packages/synergy build`, then bind-mount that
+checkout's `dist/` and `node_modules/` into the task environment (see
+`smoke/terminal-bench-2-1-deepseek-lightloop.yaml`).
+
+The default (`workflow` omitted) runs a plain single-shot session. Both modes
+are scored by the task verifier against the final container state; the
+workflow mode adds an internal completion-review loop before the attempt ends.
+Record the `workflow` value in job metadata when comparing scores across modes.
+
 ### `extra_allowed_hosts`
 
 Use the Harbor config field for restricted network policies:
