@@ -25,18 +25,22 @@ class SynergyDev(Synergy):
     def __init__(
         self,
         *args: Any,
-        extra_env: dict[str, str] | None = None,
         version: str | None = None,
         **kwargs: Any,
     ) -> None:
         if version is not None:
             raise ValueError("The local Synergy dev version is detected from the mounted binary")
+        # Pop extra_env from kwargs so it cannot be passed twice to Synergy.
+        extra_env = kwargs.pop("extra_env", None)
+        if extra_env is not None and not isinstance(extra_env, dict):
+            raise TypeError("extra_env must be a dict")
         run_env = dict(extra_env or {})
         run_env["NODE_PATH"] = DEV_NODE_PATH
         # The dev build is compiled from a source checkout that includes the
         # --workflow lightloop CLI option, so lightloop mode is allowed here.
         kwargs.setdefault("allow_lightloop", True)
-        super().__init__(*args, extra_env=run_env, **kwargs)
+        kwargs["extra_env"] = run_env
+        super().__init__(*args, **kwargs)
         self._version = None
 
     @override

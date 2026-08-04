@@ -417,7 +417,7 @@ iterates within the same attempt).
 
 The pinned Synergy release (2.4.3) does not expose `--workflow lightloop`, so
 the release adapter rejects this mode at construction. Use the `SynergyDev`
-adapter (`synergy_dev_harbor.py`) with a source build that includes the CLI
+adapter (`synergy_harbor.dev`) with a source build that includes the CLI
 option: build with `bun run --cwd packages/synergy build`, then bind-mount that
 checkout's `dist/` and `node_modules/` into the task environment (see
 `smoke/terminal-bench-2-1-deepseek-lightloop.yaml`).

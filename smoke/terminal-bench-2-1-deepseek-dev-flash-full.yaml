@@ -16,7 +16,7 @@ environment:
       read_only: true
 
 agents:
-  - import_path: synergy_dev_harbor:SynergyDev
+  - import_path: synergy_harbor.dev:SynergyDev
     model_name: deepseek/deepseek-v4-flash
     kwargs:
       model_options:
