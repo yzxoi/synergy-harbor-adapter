@@ -216,6 +216,15 @@ A successful adapter run is not the same as a successful benchmark result. Check
 - whether the agent phase completed without an adapter/provider error
 - whether the verifier produced a non-zero reward
 
+The task verifier downloads uv and a CPython toolchain from astral.sh /
+GitHub inside the container. On runners where those hosts are unreachable or
+slow (e.g. mainland China), the verifier times out during `downloading uv`
+unless an outbound proxy is injected. Set `HARBOR_HTTP_PROXY` and
+`HARBOR_HTTPS_PROXY` (e.g. `http://172.17.0.1:7890` for a clash proxy on the
+Docker host) and the smoke configs forward them to the verifier via
+`[verifier].env`. Raise `verifier.timeout_multiplier` when the toolchain
+download is slow.
+
 ## Mode 4: agent-only debugging
 
 Skip the verifier when debugging API authentication, model configuration, Synergy startup, or tool execution:
