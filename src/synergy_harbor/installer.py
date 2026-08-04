@@ -71,13 +71,17 @@ done
 if [ -n "$missing" ]; then
   echo "installing missing tools:$missing"
   if command -v apt-get >/dev/null 2>&1; then
-    # Prefer a China-friendly apt mirror when the archive host is not
-    # reachable (e.g. mainland China runners); fall back to the default.
-    if ! timeout 5 bash -c '</dev/tcp/archive.ubuntu.com/80' 2>/dev/null; then
+    # Ubuntu 24.04 keeps deb822 sources in /etc/apt/sources.list.d/*.sources;
+    # classic .list files still exist on older releases. When the Aliyun
+    # mirror is reachable (mainland-China runners), rewrite every apt source
+    # to it; otherwise keep the default archive.
+    if timeout 5 bash -c '</dev/tcp/mirrors.aliyun.com/80' 2>/dev/null; then
       sed -i "s|http://archive.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g" \
-        /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true
+        /etc/apt/sources.list /etc/apt/sources.list.d/*.list \
+        /etc/apt/sources.list.d/*.sources 2>/dev/null || true
       sed -i "s|http://security.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g" \
-        /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true
+        /etc/apt/sources.list /etc/apt/sources.list.d/*.list \
+        /etc/apt/sources.list.d/*.sources 2>/dev/null || true
     fi
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y bash ca-certificates coreutils curl tar
