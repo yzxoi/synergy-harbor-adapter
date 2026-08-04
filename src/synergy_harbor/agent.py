@@ -148,7 +148,12 @@ class Synergy(BaseInstalledAgent):
 
         run_id = self._run_id()
         runtime_home, instruction_path, config_path = self._runtime_paths(run_id)
-        model_config_path = config_path.parent / "90-model-options.jsonc"
+        # Synergy loads global config from fixed ConfigDomain filenames under
+        # synergy.d/ (10-models.jsonc, 20-providers.jsonc, 80-permissions.jsonc).
+        # Other names are silently ignored, so model options must go into the
+        # providers domain file to take effect.
+        models_config_path = config_path.parent / "10-models.jsonc"
+        providers_config_path = config_path.parent / "20-providers.jsonc"
         provider_env_path = runtime_home / ".provider-env.sh"
         log_path = PurePosixPath("/logs/agent/synergy.jsonl")
         started_at = time.monotonic()
@@ -159,7 +164,8 @@ class Synergy(BaseInstalledAgent):
             temporary_root = Path(temporary_directory)
             host_instruction = temporary_root / "instruction.txt"
             host_config = temporary_root / "80-permissions.jsonc"
-            host_model_config = temporary_root / "90-model-options.jsonc"
+            host_models_config = temporary_root / "10-models.jsonc"
+            host_providers_config = temporary_root / "20-providers.jsonc"
             host_provider_env = temporary_root / ".provider-env.sh"
             host_instruction.write_text(instruction, encoding="utf-8")
             host_config.write_text(
@@ -175,14 +181,32 @@ class Synergy(BaseInstalledAgent):
                     encoding="utf-8",
                 )
                 host_provider_env.chmod(0o600)
+            provider_id, model_id = self.model_name.split("/", maxsplit=1)
             if self.model_options is not None:
-                provider_id, model_id = self.model_name.split("/", maxsplit=1)
-                host_model_config.write_text(
+                host_providers_config.write_text(
                     json.dumps(
                         {
                             "provider": {
                                 provider_id: {"models": {model_id: {"options": self.model_options}}}
                             }
+                        },
+                        separators=(",", ":"),
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+            if self.workflow == "lightloop":
+                # The Light Loop completion review runs as a Cortex subagent
+                # (lightloop-reviewer) whose model resolves from the role
+                # fallback chain thinking_model -> model. Without a configured
+                # role model the review fails with "No model configured" and
+                # the attempt ends failed, so pin the role models to the
+                # benchmark model for lightloop runs.
+                host_models_config.write_text(
+                    json.dumps(
+                        {
+                            "model": self.model_name,
+                            "thinking_model": self.model_name,
                         },
                         separators=(",", ":"),
                     )
@@ -204,7 +228,9 @@ class Synergy(BaseInstalledAgent):
                 if self._run_env:
                     await environment.upload_file(host_provider_env, str(provider_env_path))
                 if self.model_options is not None:
-                    await environment.upload_file(host_model_config, str(model_config_path))
+                    await environment.upload_file(host_providers_config, str(providers_config_path))
+                if self.workflow == "lightloop":
+                    await environment.upload_file(host_models_config, str(models_config_path))
                 await self.exec_as_root(
                     environment,
                     command=self._chown_command(environment, runtime_home, instruction_path),

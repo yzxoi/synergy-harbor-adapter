@@ -131,9 +131,10 @@ async def test_run_uploads_instruction_without_shell_interpolation(agent: Synerg
     uploaded_by_name = {name: (target, content) for name, target, content in environment.uploads}
     assert uploaded_by_name["instruction.txt"][1] == instruction
     assert '"controlProfile":"full_access"' in uploaded_by_name["80-permissions.jsonc"][1]
-    assert '"anthropic"' in uploaded_by_name["90-model-options.jsonc"][1]
-    assert '"claude-sonnet-4-5"' in uploaded_by_name["90-model-options.jsonc"][1]
-    assert '"thinking":{"type":"disabled"}' in uploaded_by_name["90-model-options.jsonc"][1]
+    assert '"anthropic"' in uploaded_by_name["20-providers.jsonc"][1]
+    assert '"claude-sonnet-4-5"' in uploaded_by_name["20-providers.jsonc"][1]
+    assert '"thinking":{"type":"disabled"}' in uploaded_by_name["20-providers.jsonc"][1]
+    assert "10-models.jsonc" not in uploaded_by_name
     assert context.n_input_tokens == 10
     assert context.n_output_tokens == 5
     assert context.n_cache_tokens == 2
@@ -230,7 +231,7 @@ async def test_cleanup_runs_after_setup_failure(agent: Synergy) -> None:
     class FailingUploadEnvironment(FakeEnvironment):
         async def upload_file(self, source_path: Path | str, target_path: str) -> None:
             await super().upload_file(source_path, target_path)
-            if target_path.endswith("90-model-options.jsonc"):
+            if target_path.endswith("20-providers.jsonc"):
                 raise OSError("injected upload failure")
 
     environment = FailingUploadEnvironment()
@@ -287,6 +288,11 @@ async def test_run_lightloop_passes_workflow_flag(agent: Synergy) -> None:
     assert context.metadata is not None
     assert context.metadata["synergy"]["workflow"] == "lightloop"
     assert context.metadata["synergy"]["session_id"] == "ses_loop"
+
+    uploaded_by_name = {name: (target, content) for name, target, content in environment.uploads}
+    models_config = uploaded_by_name["10-models.jsonc"][1]
+    assert '"model":"anthropic/claude-sonnet-4-5"' in models_config
+    assert '"thinking_model":"anthropic/claude-sonnet-4-5"' in models_config
 
 
 @pytest.mark.asyncio
