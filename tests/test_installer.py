@@ -41,8 +41,10 @@ def test_parses_platform_probe() -> None:
 
 
 def test_prerequisites_include_log_capture_tools() -> None:
-    assert "command -v stdbuf" in PREREQUISITE_COMMAND
-    assert "command -v tee" in PREREQUISITE_COMMAND
+    assert "stdbuf" in PREREQUISITE_COMMAND
+    assert "tee" in PREREQUISITE_COMMAND
+    assert "for tool in bash curl sha256sum tar stdbuf tee" in PREREQUISITE_COMMAND
+    assert 'command -v "$tool" >/dev/null' in PREREQUISITE_COMMAND
 
 
 def test_install_command_verifies_archive_before_extraction() -> None:

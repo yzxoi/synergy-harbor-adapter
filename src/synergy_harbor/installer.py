@@ -62,22 +62,36 @@ fi
 """
 
 PREREQUISITE_COMMAND = """set -euo pipefail
-if command -v apt-get >/dev/null 2>&1; then
-  apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install -y bash ca-certificates coreutils curl tar
-elif command -v apk >/dev/null 2>&1; then
-  apk add --no-cache bash ca-certificates coreutils curl tar
-elif command -v dnf >/dev/null 2>&1; then
-  dnf install -y bash ca-certificates coreutils curl tar
-elif command -v yum >/dev/null 2>&1; then
-  yum install -y bash ca-certificates coreutils curl tar
+missing=""
+for tool in bash curl sha256sum tar stdbuf tee; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    missing="$missing $tool"
+  fi
+done
+if [ -n "$missing" ]; then
+  echo "installing missing tools:$missing"
+  if command -v apt-get >/dev/null 2>&1; then
+    # Prefer a China-friendly apt mirror when the archive host is not
+    # reachable (e.g. mainland China runners); fall back to the default.
+    if ! timeout 5 bash -c '</dev/tcp/archive.ubuntu.com/80' 2>/dev/null; then
+      sed -i "s|http://archive.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g" \
+        /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true
+      sed -i "s|http://security.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g" \
+        /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true
+    fi
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y bash ca-certificates coreutils curl tar
+  elif command -v apk >/dev/null 2>&1; then
+    apk add --no-cache bash ca-certificates coreutils curl tar
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y bash ca-certificates coreutils curl tar
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y bash ca-certificates coreutils curl tar
+  fi
 fi
-command -v bash >/dev/null
-command -v curl >/dev/null
-command -v sha256sum >/dev/null
-command -v tar >/dev/null
-command -v stdbuf >/dev/null
-command -v tee >/dev/null
+for tool in bash curl sha256sum tar stdbuf tee; do
+  command -v "$tool" >/dev/null
+done
 """
 
 

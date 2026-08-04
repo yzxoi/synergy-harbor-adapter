@@ -98,7 +98,8 @@ async def test_install_selects_and_verifies_release(agent: Synergy) -> None:
     commands = "\n".join(item["command"] for item in environment.commands)
     assert "sha256sum -c -" in commands
     assert "synergy-linux-x64.tar.gz" in commands
-    assert "bun" not in commands
+    assert "bun run" not in commands
+    assert "bun install" not in commands
 
 
 @pytest.mark.asyncio
