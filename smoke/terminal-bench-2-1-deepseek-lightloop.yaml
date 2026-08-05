@@ -22,7 +22,7 @@ environment:
 
 agents:
   - import_path: synergy_harbor.dev:SynergyDev
-    model_name: deepseek/deepseek-chat
+    model_name: deepseek/deepseek-v4-flash
     kwargs:
       model_options:
         thinking:
