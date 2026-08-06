@@ -53,6 +53,7 @@ class Synergy(BaseInstalledAgent):
         model_options: dict[str, Any] | None = None,
         workflow: str | None = None,
         allow_lightloop: bool = False,
+        agent: str = "synergy",
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -69,6 +70,8 @@ class Synergy(BaseInstalledAgent):
                 "The pinned Synergy release does not expose --workflow lightloop; "
                 "use the SynergyDev adapter with a source build that includes the CLI option"
             )
+        if not agent or any(character.isspace() for character in agent):
+            raise ValueError(f"Invalid agent name: {agent!r}")
         run_env = dict(extra_env or {})
         for key, value in run_env.items():
             if not isinstance(key, str) or _ENVIRONMENT_NAME.fullmatch(key) is None:
@@ -87,6 +90,7 @@ class Synergy(BaseInstalledAgent):
         self.variant = variant
         self.model_options = model_options
         self.workflow = workflow
+        self.agent = agent
         self._output = ""
         self._duration_seconds: float | None = None
 
@@ -242,9 +246,11 @@ class Synergy(BaseInstalledAgent):
                 )
                 workflow_flag = " --workflow lightloop" if self.workflow == "lightloop" else ""
                 env_prefix = f". {shlex.quote(str(provider_env_path))} && " if self._run_env else ""
+                agent_flag = shlex.quote(self.agent)
                 command = (
                     f"{env_prefix}{shlex.quote(SYNERGY_BINARY)} send "
-                    f"--format json --agent synergy --model {model}{variant_flag}{workflow_flag} "
+                    f"--format json --agent {agent_flag} "
+                    f"--model {model}{variant_flag}{workflow_flag} "
                     f"< {shlex.quote(str(instruction_path))} "
                     f"2>&1 | stdbuf -oL tee {shlex.quote(str(log_path))}"
                 )
@@ -308,6 +314,7 @@ class Synergy(BaseInstalledAgent):
         metadata = dict(context.metadata or {})
         metadata["synergy"] = {
             "version": SYNERGY_VERSION,
+            "agent": self.agent,
             "workflow": self.workflow,
             "session_id": summary.session_id,
             "step_count": summary.step_count,
