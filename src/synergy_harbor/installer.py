@@ -72,7 +72,7 @@ if [ -n "$missing" ]; then
   echo "installing missing tools:$missing"
   if command -v apt-get >/dev/null 2>&1; then
     # Ubuntu 24.04 keeps deb822 sources in /etc/apt/sources.list.d/*.sources;
-    # classic .list files still exist on older releases. When the Aliyun
+    # Debian 12 uses debian.sources with deb.debian.org. When the Aliyun
     # mirror is reachable (mainland-China runners), rewrite every apt source
     # to it; otherwise keep the default archive.
     if timeout 5 bash -c '</dev/tcp/mirrors.aliyun.com/80' 2>/dev/null; then
@@ -80,6 +80,9 @@ if [ -n "$missing" ]; then
         /etc/apt/sources.list /etc/apt/sources.list.d/*.list \
         /etc/apt/sources.list.d/*.sources 2>/dev/null || true
       sed -i "s|http://security.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g" \
+        /etc/apt/sources.list /etc/apt/sources.list.d/*.list \
+        /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+      sed -i "s|http://deb.debian.org/debian|http://mirrors.aliyun.com/debian|g" \
         /etc/apt/sources.list /etc/apt/sources.list.d/*.list \
         /etc/apt/sources.list.d/*.sources 2>/dev/null || true
     fi
