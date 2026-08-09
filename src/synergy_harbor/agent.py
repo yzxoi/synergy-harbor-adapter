@@ -123,6 +123,23 @@ class Synergy(BaseInstalledAgent):
 
         return NetworkAllowlist(domains=self._extra_allowed_hosts)
 
+    def to_agent_info(self) -> Any:
+        """Return agent identity as a plain dict for cross-framework results.
+
+        Harbor and Pier each define their own pydantic ``AgentInfo``; returning
+        a dict satisfies both frameworks' ``TrialResult.agent_info`` validators
+        without importing either runtime model.
+        """
+        model_info = None
+        if self.model_name and "/" in self.model_name:
+            provider, name = self.model_name.split("/", maxsplit=1)
+            model_info = {"name": name, "provider": provider}
+        return {
+            "name": self.name(),
+            "version": self.version() or "unknown",
+            "model_info": model_info,
+        }
+
     @staticmethod
     @override
     def name() -> str:
