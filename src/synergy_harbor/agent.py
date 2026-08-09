@@ -54,9 +54,14 @@ class Synergy(BaseInstalledAgent):
         workflow: str | None = None,
         allow_lightloop: bool = False,
         agent: str = "synergy",
+        extra_allowed_hosts: list[str] | None = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
+        if extra_allowed_hosts is not None and not all(
+            isinstance(host, str) and host for host in extra_allowed_hosts
+        ):
+            raise ValueError("extra_allowed_hosts must be a list of non-empty strings")
         if version is not None and version != SYNERGY_VERSION:
             raise ValueError(
                 f"This adapter pins Synergy {SYNERGY_VERSION}; unsupported version: {version}"
@@ -91,8 +96,32 @@ class Synergy(BaseInstalledAgent):
         self.model_options = model_options
         self.workflow = workflow
         self.agent = agent
+        self._extra_allowed_hosts = list(extra_allowed_hosts or [])
         self._output = ""
         self._duration_seconds: float | None = None
+
+    def install_spec(self) -> None:
+        """Pier 0.3.0 compatibility: no declarative build-time install spec.
+
+        The Synergy binary is installed imperatively in :meth:`install` from
+        probe results, so no Dockerfile inlining is needed.
+        """
+        return None
+
+    def network_allowlist(self):
+        """Pier 0.3.0 compatibility: expose model API hosts for egress filtering.
+
+        Pier's no-network tasks route filtered egress through a proxy that only
+        admits these domains, so the model provider API must be listed here.
+        Pier consumes only the ``domains`` attribute (duck-typed), so no pier
+        import is needed and Harbor runs are unaffected.
+        """
+
+        class NetworkAllowlist:
+            def __init__(self, domains: list[str]) -> None:
+                self.domains = domains
+
+        return NetworkAllowlist(domains=self._extra_allowed_hosts)
 
     @staticmethod
     @override
