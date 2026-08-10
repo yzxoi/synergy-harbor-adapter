@@ -280,7 +280,11 @@ class Synergy(BaseInstalledAgent):
                     command=(
                         f"rm -rf {shlex.quote(str(runtime_home))} "
                         f"{shlex.quote(str(instruction_path))} && "
-                        f"mkdir -p {shlex.quote(str(config_path.parent))}"
+                        f"mkdir -p {shlex.quote(str(config_path.parent))} && "
+                        # Some task images (e.g. DeepSWE) do not pre-create
+                        # /logs/agent; the send pipeline tees the JSONL log
+                        # there, so create it before running the agent.
+                        "mkdir -p /logs/agent && chmod 777 /logs/agent"
                     ),
                 )
                 await environment.upload_file(host_config, str(config_path))
