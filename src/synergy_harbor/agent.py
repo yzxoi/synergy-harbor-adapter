@@ -55,6 +55,7 @@ class Synergy(BaseInstalledAgent):
         allow_lightloop: bool = False,
         agent: str = "synergy",
         extra_allowed_hosts: list[str] | None = None,
+        export_model_patch: bool = False,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -97,6 +98,7 @@ class Synergy(BaseInstalledAgent):
         self.workflow = workflow
         self.agent = agent
         self._extra_allowed_hosts = list(extra_allowed_hosts or [])
+        self._export_model_patch = export_model_patch
         self._output = ""
         self._duration_seconds: float | None = None
 
@@ -194,6 +196,53 @@ class Synergy(BaseInstalledAgent):
             return f"chmod -R u+rwX,go-rwx {quoted_paths}"
         owner = shlex.quote(str(environment.default_user))
         return f"chown -R -- {owner} {quoted_paths} && chmod -R u+rwX,go-rwx {quoted_paths}"
+
+    async def _capture_git_base(self, environment: BaseEnvironment) -> str:
+        """Best-effort capture of the pre-run git HEAD at /app.
+
+        Returns an empty string when the environment has no git repository
+        (e.g. Terminal-Bench tasks), in which case patch export is skipped.
+        """
+
+        try:
+            result = await self.exec_as_root(
+                environment,
+                command="cd /app && git rev-parse HEAD",
+                timeout_sec=30,
+            )
+        except Exception as error:
+            self.logger.debug("Could not capture /app git HEAD: %s", error)
+            return ""
+        if result.return_code != 0:
+            self.logger.debug("No git repository at /app (exit %s)", result.return_code)
+            return ""
+        return (result.stdout or "").strip()
+
+    async def _export_patch(self, environment: BaseEnvironment, base_sha: str) -> None:
+        """Export the agent's changes as /logs/artifacts/model.patch (best-effort).
+
+        DeepSWE relies on a ``[[verifier.collect]]`` hook to export the agent's
+        changes into the artifact directory, but Pier 0.3.0 never runs that
+        hook. Without this export the verifier grades the pristine base state
+        and every challenge test fails. The diff covers both committed and
+        uncommitted agent changes against the pre-run HEAD.
+        """
+
+        command = (
+            "cd /app && git config --global --add safe.directory /app && "
+            "mkdir -p /logs/artifacts && git add -A && "
+            f"git diff --binary {shlex.quote(base_sha)} > /logs/artifacts/model.patch"
+        )
+        try:
+            result = await self.exec_as_root(environment, command=command, timeout_sec=120)
+            if result.return_code != 0:
+                self.logger.warning(
+                    "model.patch export failed with exit %s: %s",
+                    result.return_code,
+                    (result.stdout or "")[-500:],
+                )
+        except Exception as error:
+            self.logger.warning("model.patch export failed: %s", error)
 
     @override
     @with_prompt_template
@@ -300,6 +349,10 @@ class Synergy(BaseInstalledAgent):
                     command=self._chown_command(environment, runtime_home, instruction_path),
                 )
 
+                base_sha = ""
+                if self._export_model_patch:
+                    base_sha = await self._capture_git_base(environment)
+
                 model = shlex.quote(self.model_name)
                 variant_flag = (
                     f" --variant {shlex.quote(self.variant)}" if self.variant is not None else ""
@@ -321,6 +374,8 @@ class Synergy(BaseInstalledAgent):
                     env={"HOME": str(runtime_home), "SYNERGY_HOME": str(runtime_home)},
                 )
                 self._output = result.stdout or ""
+                if base_sha:
+                    await self._export_patch(environment, base_sha)
             finally:
                 self._duration_seconds = time.monotonic() - started_at
                 try:

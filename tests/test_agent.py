@@ -308,3 +308,67 @@ async def test_run_default_mode_omits_workflow_flag(agent: Synergy) -> None:
     assert "--workflow" not in send_commands[0]["command"]
     assert context.metadata is not None
     assert context.metadata["synergy"]["workflow"] is None
+
+
+class GitEnvironment(FakeEnvironment):
+    """FakeEnvironment that reports a git repository at /app."""
+
+    async def exec(
+        self,
+        command: str,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+        timeout_sec: int | None = None,
+        user: str | int | None = None,
+    ) -> ExecResult:
+        result = await super().exec(command, cwd, env, timeout_sec, user)
+        if "git rev-parse HEAD" in command:
+            return ExecResult(stdout="a1b2c3d4e5f6\n", stderr="", return_code=0)
+        return result
+
+
+@pytest.mark.asyncio
+async def test_run_export_model_patch_disabled_by_default(agent: Synergy) -> None:
+    environment = FakeEnvironment(run_output="")
+    context = AgentContext()
+
+    await agent.run("plain task", cast(BaseEnvironment, environment), context)
+
+    commands = "\n".join(item["command"] for item in environment.commands)
+    assert "git rev-parse" not in commands
+    assert "model.patch" not in commands
+
+
+@pytest.mark.asyncio
+async def test_run_export_model_patch_captures_base_and_exports(tmp_path: Path) -> None:
+    instance = Synergy(
+        logs_dir=tmp_path,
+        model_name="deepseek/deepseek-v4-flash",
+        export_model_patch=True,
+    )
+    instance.context_id = UUID("12345678-1234-5678-1234-567812345678")
+    environment = GitEnvironment(run_output="")
+    context = AgentContext()
+
+    await instance.run("complete the task", cast(BaseEnvironment, environment), context)
+
+    commands = "\n".join(item["command"] for item in environment.commands)
+    assert "cd /app && git rev-parse HEAD" in commands
+    assert "git diff --binary a1b2c3d4e5f6 > /logs/artifacts/model.patch" in commands
+
+
+@pytest.mark.asyncio
+async def test_run_export_model_patch_skipped_without_git_repo(tmp_path: Path) -> None:
+    instance = Synergy(
+        logs_dir=tmp_path,
+        model_name="deepseek/deepseek-v4-flash",
+        export_model_patch=True,
+    )
+    instance.context_id = UUID("12345678-1234-5678-1234-567812345678")
+    environment = FakeEnvironment(run_output="")
+    context = AgentContext()
+
+    await instance.run("complete the task", cast(BaseEnvironment, environment), context)
+
+    commands = "\n".join(item["command"] for item in environment.commands)
+    assert "model.patch" not in commands
