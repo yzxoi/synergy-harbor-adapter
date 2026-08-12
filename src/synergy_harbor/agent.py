@@ -229,19 +229,17 @@ class Synergy(BaseInstalledAgent):
         """
 
         # DeepSWE tasks instruct the agent to work on a new branch and commit;
-        # the official [[verifier.collect]] hook diffs base..HEAD.  Emulate that
-        # semantics, widen to the newest commit not reachable from base (covers
-        # agents that commit on a branch and then switch back to main), and
-        # append uncommitted worktree changes, so committed and in-progress
-        # edits both reach the verifier.
+        # the official [[verifier.collect]] hook diffs base..HEAD.  Stage every
+        # change first so committed, staged, and unstaged agent work all land
+        # in the index, then diff the index against base.  When the agent
+        # committed, the index equals the new HEAD, so base..HEAD changes are
+        # included; when the agent only staged or left the worktree dirty,
+        # `git add -A` folds those in as well.
         command = (
             "cd /app && git config --global --add safe.directory /app && "
-            "mkdir -p /logs/artifacts && "
-            "tip=$(git rev-list --all --not "
-            f"{shlex.quote(base_sha)} --max-count=1 2>/dev/null || echo HEAD); "
-            f"git diff --binary {shlex.quote(base_sha)} "
-            '"$tip" > /logs/artifacts/model.patch; '
-            "git diff --binary HEAD >> /logs/artifacts/model.patch; "
+            "mkdir -p /logs/artifacts && git add -A && "
+            f"git diff --cached --binary {shlex.quote(base_sha)} "
+            "> /logs/artifacts/model.patch; "
             # Debug artifacts: trajectory and repo state snapshots so a
             # wrong-diff patch can be diagnosed without a separate log download.
             "cp /logs/agent/synergy.jsonl /logs/artifacts/synergy.jsonl 2>/dev/null || true; "
@@ -386,10 +384,17 @@ class Synergy(BaseInstalledAgent):
                     f"2>&1 | stdbuf -oL tee {shlex.quote(str(log_path))}"
                 )
                 should_apply_context = True
+                run_env = {"HOME": str(runtime_home), "SYNERGY_HOME": str(runtime_home)}
+                if self._export_model_patch:
+                    # DeepSWE repositories live at /app (see task.toml
+                    # verifier.collect).  Pin the CLI working directory so the
+                    # agent's tools operate on the task repository instead of
+                    # whatever directory the container happens to start in.
+                    run_env["SYNERGY_CWD"] = "/app"
                 result = await self.exec_as_agent(
                     environment,
                     command=command,
-                    env={"HOME": str(runtime_home), "SYNERGY_HOME": str(runtime_home)},
+                    env=run_env,
                 )
                 self._output = result.stdout or ""
                 if base_sha:
