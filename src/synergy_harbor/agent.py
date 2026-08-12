@@ -391,6 +391,13 @@ class Synergy(BaseInstalledAgent):
                     # agent's tools operate on the task repository instead of
                     # whatever directory the container happens to start in.
                     run_env["SYNERGY_CWD"] = "/app"
+                    # The isolated HOME would redirect GOMODCACHE away from
+                    # the image-baked module cache at /root/go/pkg/mod, forcing
+                    # the agent to re-download deps over a flaky network and
+                    # burn context on tooling instead of the task.  Point the
+                    # Go toolchain at the pre-baked cache when it exists.
+                    run_env["GOMODCACHE"] = "/root/go/pkg/mod"
+                    run_env["GOPATH"] = "/root/go"
                 result = await self.exec_as_agent(
                     environment,
                     command=command,
