@@ -231,7 +231,14 @@ class Synergy(BaseInstalledAgent):
         command = (
             "cd /app && git config --global --add safe.directory /app && "
             "mkdir -p /logs/artifacts && git add -A && "
-            f"git diff --binary {shlex.quote(base_sha)} > /logs/artifacts/model.patch"
+            f"git diff --binary {shlex.quote(base_sha)} > /logs/artifacts/model.patch; "
+            # Debug artifacts: trajectory and repo state snapshots so a
+            # zero-byte patch can be diagnosed without a separate log download.
+            "cp /logs/agent/synergy.jsonl /logs/artifacts/synergy.jsonl 2>/dev/null || true; "
+            "{ echo '=== git status --short ==='; git status --short; "
+            "echo '=== git log --oneline -8 ==='; git log --oneline -8 2>/dev/null; "
+            "echo '=== ls -la /app ==='; ls -la /app; "
+            "echo '=== pwd ==='; pwd; } > /logs/artifacts/repo-state.txt 2>&1"
         )
         try:
             result = await self.exec_as_root(environment, command=command, timeout_sec=120)
