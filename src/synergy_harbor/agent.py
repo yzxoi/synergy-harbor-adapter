@@ -228,15 +228,26 @@ class Synergy(BaseInstalledAgent):
         uncommitted agent changes against the pre-run HEAD.
         """
 
+        # DeepSWE tasks instruct the agent to work on a new branch and commit;
+        # the official [[verifier.collect]] hook diffs base..HEAD.  Emulate that
+        # semantics, widen to the newest commit not reachable from base (covers
+        # agents that commit on a branch and then switch back to main), and
+        # append uncommitted worktree changes, so committed and in-progress
+        # edits both reach the verifier.
         command = (
             "cd /app && git config --global --add safe.directory /app && "
-            "mkdir -p /logs/artifacts && git add -A && "
-            f"git diff --binary {shlex.quote(base_sha)} > /logs/artifacts/model.patch; "
+            "mkdir -p /logs/artifacts && "
+            "tip=$(git rev-list --all --not "
+            f"{shlex.quote(base_sha)} --max-count=1 2>/dev/null || echo HEAD); "
+            f"git diff --binary {shlex.quote(base_sha)} "
+            '"$tip" > /logs/artifacts/model.patch; '
+            "git diff --binary HEAD >> /logs/artifacts/model.patch; "
             # Debug artifacts: trajectory and repo state snapshots so a
-            # zero-byte patch can be diagnosed without a separate log download.
+            # wrong-diff patch can be diagnosed without a separate log download.
             "cp /logs/agent/synergy.jsonl /logs/artifacts/synergy.jsonl 2>/dev/null || true; "
             "{ echo '=== git status --short ==='; git status --short; "
             "echo '=== git log --oneline -8 ==='; git log --oneline -8 2>/dev/null; "
+            "echo '=== git branch -a ==='; git branch -a; "
             "echo '=== ls -la /app ==='; ls -la /app; "
             "echo '=== pwd ==='; pwd; } > /logs/artifacts/repo-state.txt 2>&1"
         )

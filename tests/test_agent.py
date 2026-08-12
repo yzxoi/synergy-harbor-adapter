@@ -354,7 +354,9 @@ async def test_run_export_model_patch_captures_base_and_exports(tmp_path: Path) 
 
     commands = "\n".join(item["command"] for item in environment.commands)
     assert "cd /app && git rev-parse HEAD" in commands
-    assert "git diff --binary a1b2c3d4e5f6 > /logs/artifacts/model.patch" in commands
+    assert "git rev-list --all --not a1b2c3d4e5f6" in commands
+    assert 'git diff --binary a1b2c3d4e5f6 "$tip" > /logs/artifacts/model.patch' in commands
+    assert "git diff --binary HEAD >> /logs/artifacts/model.patch" in commands
 
 
 @pytest.mark.asyncio
