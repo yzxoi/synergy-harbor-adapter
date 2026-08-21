@@ -1,0 +1,43 @@
+job_name: synergy-deepswe-thinking-max-workflow10-v2
+n_concurrent_trials: 4
+agent_timeout_multiplier: 4.0
+verifier_timeout_multiplier: 2.0
+n_attempts: 1
+quiet: false
+
+environment:
+  type: docker
+  mounts:
+    - type: bind
+      source: /root/synergy-src/packages/synergy/dist
+      target: /opt/synergy-dev-dist
+      read_only: true
+    - type: bind
+      source: /root/synergy-src/node_modules
+      target: /opt/synergy-dev-node_modules
+      read_only: true
+
+agents:
+  - import_path: synergy_harbor.dev:SynergyDev
+    model_name: deepseek/deepseek-v4-flash
+    kwargs:
+      agent: synergy-max
+      export_model_patch: true
+      variant: max
+      workflow_prompt: true
+      extra_allowed_hosts:
+        - api.deepseek.com
+    env:
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+
+datasets:
+  - path: /root/deep-swe/tasks
+    task_names:
+      - csstree-shorthand-expansion-compression
+      - dateutil-rfc5545-timezone-interop
+      - optique-conditional-option-dependencies
+      - meriyah-explicit-resource-declarations
+      - kombu-single-active-consumer-priority
+      - clack-async-autocomplete-options
+      - cliffy-config-file-parsing
+      - mashumaro-flattened-dataclass-fields

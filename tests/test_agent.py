@@ -373,3 +373,78 @@ async def test_run_export_model_patch_skipped_without_git_repo(tmp_path: Path) -
 
     commands = "\n".join(item["command"] for item in environment.commands)
     assert "model.patch" not in commands
+
+
+async def test_run_injects_default_workflow_prompt(tmp_path: Path) -> None:
+    from synergy_harbor.agent import DEFAULT_WORKFLOW_PROMPT
+
+    instance = Synergy(
+        logs_dir=tmp_path,
+        model_name="anthropic/claude-sonnet-4-5",
+        workflow_prompt=True,
+    )
+    instance.context_id = UUID("12345678-1234-5678-1234-567812345678")
+    environment = FakeEnvironment()
+    context = AgentContext()
+    instruction = "do the task"
+
+    await instance.run(instruction, cast(BaseEnvironment, environment), context)
+
+    uploaded_by_name = {name: (target, content) for name, target, content in environment.uploads}
+    uploaded = uploaded_by_name["instruction.txt"][1]
+    assert uploaded.startswith(DEFAULT_WORKFLOW_PROMPT.rstrip())
+    assert uploaded.endswith(instruction)
+    assert "\n\n" in uploaded
+
+
+async def test_run_injects_custom_workflow_prompt(tmp_path: Path) -> None:
+    instance = Synergy(
+        logs_dir=tmp_path,
+        model_name="anthropic/claude-sonnet-4-5",
+        workflow_prompt="ALWAYS verify with tests before finishing.",
+    )
+    instance.context_id = UUID("12345678-1234-5678-1234-567812345678")
+    environment = FakeEnvironment()
+    context = AgentContext()
+    instruction = "do the task"
+
+    await instance.run(instruction, cast(BaseEnvironment, environment), context)
+
+    uploaded_by_name = {name: (target, content) for name, target, content in environment.uploads}
+    uploaded = uploaded_by_name["instruction.txt"][1]
+    assert uploaded.startswith("ALWAYS verify with tests before finishing.")
+    assert uploaded.endswith(instruction)
+
+
+async def test_run_omits_workflow_prompt_by_default(tmp_path: Path) -> None:
+    instance = Synergy(
+        logs_dir=tmp_path,
+        model_name="anthropic/claude-sonnet-4-5",
+    )
+    instance.context_id = UUID("12345678-1234-5678-1234-567812345678")
+    environment = FakeEnvironment()
+    context = AgentContext()
+    instruction = "do the task"
+
+    await instance.run(instruction, cast(BaseEnvironment, environment), context)
+
+    uploaded_by_name = {name: (target, content) for name, target, content in environment.uploads}
+    assert uploaded_by_name["instruction.txt"][1] == instruction
+
+
+def test_rejects_empty_workflow_prompt(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        Synergy(
+            logs_dir=tmp_path,
+            model_name="anthropic/claude-sonnet-4-5",
+            workflow_prompt="   ",
+        )
+
+
+def test_rejects_non_str_bool_workflow_prompt(tmp_path: Path) -> None:
+    with pytest.raises(TypeError, match="workflow_prompt must be a str, bool, or None"):
+        Synergy(
+            logs_dir=tmp_path,
+            model_name="anthropic/claude-sonnet-4-5",
+            workflow_prompt=42,  # type: ignore[arg-type]
+        )

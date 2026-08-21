@@ -1,0 +1,99 @@
+job_name: synergy-deepswe-thinking-max-v3
+n_concurrent_trials: 8
+agent_timeout_multiplier: 4.0
+verifier_timeout_multiplier: 2.0
+n_attempts: 1
+quiet: false
+environment:
+  type: docker
+  mounts:
+  - type: bind
+    source: /root/synergy-src/packages/synergy/dist
+    target: /opt/synergy-dev-dist
+    read_only: true
+  - type: bind
+    source: /root/synergy-src/node_modules
+    target: /opt/synergy-dev-node_modules
+    read_only: true
+agents:
+- import_path: synergy_harbor.dev:SynergyDev
+  model_name: deepseek/deepseek-v4-flash
+  kwargs:
+    agent: synergy-max
+    export_model_patch: true
+    variant: max
+    workflow_prompt: true
+    extra_allowed_hosts:
+    - api.deepseek.com
+  env:
+    DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+datasets:
+- path: /root/deep-swe/tasks
+  task_names:
+  - boa-hierarchical-evaluation-cancellation
+  - expr-try-catch-errors
+  - fastapi-implicit-head-options
+  - geo-shapeindex-serialization
+  - mnamer-daemon-watch-lifecycle
+  - mobly-grouped-test-barriers
+  - opa-template-string-reconstruction
+  - oxvg-structural-selector-preservation
+  - psd-tools-blend-range-api
+  - quill-shared-toolbar-focus
+  - sqlfmt-create-table-ddl-formatting
+  - sqlite-utils-safe-import-checkpoints
+  - obsidian-linter-scoped-ignore-markers
+  - dasel-html-document-format
+  - scriggo-method-declarations
+  - pwntools-tube-multiplexing
+  - yjs-map-conflict-detection
+  - effect-sse-httpapi-streaming
+  - koota-composite-trait-aspects
+  - task-task-graph-export
+  - tengo-callable-instance-isolation
+  - bandit-structured-nosec-directives
+  - textual-richlog-follow-state
+  - dynamodb-toolbox-conditional-attribute-requirements
+  - opa-rego-rule-profiling
+  - ipython-session-bundle-replay
+  - happy-dom-deterministic-intersectionobserver
+  - meriyah-explicit-resource-declarations
+  - kombu-single-active-consumer-priority
+  - optique-conditional-option-dependencies
+  - httpx-streaming-json-iteration
+  - eicrud-keyset-pagination-cursor
+  - updo-policy-alerting
+  - langchain-request-coalescing
+  - yaegi-go-embed-directives
+  - wasmi-trap-coredumps
+  - tengo-destructuring-bindings
+  - helm-array-merge-strategies
+  - katex-multicolumn-array-spans
+  - aiomonitor-task-snapshots-diff
+  - superjson-error-stack-serialization
+  - kysely-window-grouping-helpers
+  - scc-bounded-memory-spilling
+  - vitest-duration-sharding
+  - obsidian-linter-link-format-conversion
+  - bandit-incremental-cache-control
+  - anko-default-function-arguments
+  - kea-atomic-signal-selectors
+  - koota-pair-relation-tracking
+  - termenv-preserve-ansi-resets
+  - participle-grammar-conflict-analysis
+  - koota-entity-snapshot-rollback
+  - koota-query-predicates
+  - skrub-duration-encoding
+  - etree-xml-diff-patch
+  - ofetch-per-origin-circuit-breaker
+  - clack-async-autocomplete-options
+  - arcane-drift-detection-baselines
+  - arktype-json-schema-refs-dependencies
+  - onedump-dump-encryption-pipeline
+  - mashumaro-flattened-dataclass-fields
+  - prometheus-typed-label-sorting
+  - awilix-async-container-initialization
+  - koota-deferred-mutation-buffer
+  - testem-bail-on-test-failure
+  - ink-grid-box-layout
+  - pest-character-class-coalescing
