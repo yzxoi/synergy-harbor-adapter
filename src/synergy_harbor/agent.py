@@ -26,6 +26,26 @@ from synergy_harbor.parser import UsageSummary, parse_synergy_jsonl
 
 _ENVIRONMENT_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
+DEFAULT_WORKFLOW_PROMPT = """# Workflow — follow these steps in order
+
+Work step-by-step so you can iterate on your changes and catch problems early.
+
+1. **Explore** — read the relevant files to understand the codebase and what needs to change.
+2. **Reproduce** — write a small reproduction script (or run an existing test) and confirm the current behavior does not meet the requirements. A fix that does not change observable behavior is not a fix.
+3. **Fix** — edit the source code to implement the required behavior. Make sure your edits actually change the runtime behavior: re-run the reproduction script after editing and confirm the output changed.
+4. **Verify** — re-run your reproduction script and the project's relevant tests to confirm the fix works. Then read the task description again and check EVERY specific assertion it makes: exact strings, messages, formats, file names, option names, parameter names, error texts, return shapes. The grader checks these precisely — a feature that works "almost" is a failure.
+5. **Edge cases** — test boundary conditions (empty input, invalid values, errors, concurrency, etc.) and run related regression tests to confirm nothing is broken.
+6. **Adversarial review (optional, at most ONE subagent)** — if your implementation is complete and the relevant tests pass, you MAY dispatch exactly ONE subagent with the task tool (property-test engineer for edge cases, or test strategist for requirement coverage). Do not dispatch more than one, and skip this step entirely if your change is large and you are short on time. Apply only clearly useful findings, then re-verify.
+7. **Finish** — once all relevant behavior passes, stop and return. Do not keep editing after the task is done.
+
+## Submission
+
+Your repository state is evaluated automatically when you finish: the working tree diff is exported from /app and run against hidden tests in a clean environment. There is no commit or submit command — just leave /app in the correct final state.
+
+- Passing only tests you wrote is not enough; reason about every requirement above.
+- Do not modify test files, the verifier, or the harness.
+- Prefer small, targeted edits over large rewrites."""
+
 
 class Synergy(BaseInstalledAgent):
     """Run Synergy inside a Harbor task environment through its headless CLI."""
@@ -56,6 +76,7 @@ class Synergy(BaseInstalledAgent):
         agent: str = "synergy",
         extra_allowed_hosts: list[str] | None = None,
         export_model_patch: bool = False,
+        workflow_prompt: str | bool | None = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -78,6 +99,12 @@ class Synergy(BaseInstalledAgent):
             )
         if not agent or any(character.isspace() for character in agent):
             raise ValueError(f"Invalid agent name: {agent!r}")
+        if workflow_prompt is not None and not isinstance(workflow_prompt, (str, bool)):
+            raise TypeError("workflow_prompt must be a str, bool, or None")
+        if workflow_prompt is True:
+            workflow_prompt = DEFAULT_WORKFLOW_PROMPT
+        if isinstance(workflow_prompt, str) and not workflow_prompt.strip():
+            raise ValueError("workflow_prompt must not be empty")
         run_env = dict(extra_env or {})
         for key, value in run_env.items():
             if not isinstance(key, str) or _ENVIRONMENT_NAME.fullmatch(key) is None:
@@ -99,6 +126,7 @@ class Synergy(BaseInstalledAgent):
         self.agent = agent
         self._extra_allowed_hosts = list(extra_allowed_hosts or [])
         self._export_model_patch = export_model_patch
+        self._workflow_prompt = workflow_prompt
         self._output = ""
         self._duration_seconds: float | None = None
 
@@ -292,6 +320,8 @@ class Synergy(BaseInstalledAgent):
             host_models_config = temporary_root / "10-models.jsonc"
             host_providers_config = temporary_root / "20-providers.jsonc"
             host_provider_env = temporary_root / ".provider-env.sh"
+            if self._workflow_prompt:
+                instruction = f"{self._workflow_prompt.rstrip()}\n\n{instruction}"
             host_instruction.write_text(instruction, encoding="utf-8")
             host_config.write_text(
                 json.dumps({"controlProfile": "full_access"}, separators=(",", ":")) + "\n",
